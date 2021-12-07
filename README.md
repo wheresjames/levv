@@ -3,7 +3,7 @@
 
 Command line based graphical log file viewer.
 
-![Screen Shot](https://raw.githubusercontent.com/wheresjames/levv/master/imgs/view-syslog.png)
+![Screen Shot](https://raw.githubusercontent.com/wheresjames/levv/main/imgs/view-syslog.png)
 
 ## Keyboard
 

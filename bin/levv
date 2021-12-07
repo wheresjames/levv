@@ -1,0 +1,1148 @@
+#!/usr/bin/env python
+#
+# Developer: Robert Umbehant
+#
+
+import time
+import os
+import re
+import sys
+import string
+import curses
+import numpy
+import select
+import psutil
+import unicodedata
+import dateutil.parser
+import argparse
+import shlex
+
+from dateutil import tz
+from datetime import datetime, timedelta
+
+try:
+    import sparen
+    Log = sparen.log
+except Exception as e:
+    Log = print
+
+
+#-------------------------------------------------------------------
+# Globals
+
+# Curses
+stdscr = 0
+
+
+#-------------------------------------------------------------------
+# Timeline
+
+def initTimeline(w, h):
+
+    # At least 500 rows
+    rows = h
+    if 500 > rows:
+        rows = 500
+
+    return {'w': w, 'h': h, 'x': 0, 'y': 0, 'start': 0, 'end': 0, \
+            'max_disp': 0, 'max_slot': 0, 'slots': numpy.zeros((rows, w)) }
+
+
+def clearTimeSlots(ti, w, h):
+
+    # At least 500 rows
+    rows = h
+    if 500 > rows:
+        rows = 500
+
+    ti['slots'] = numpy.zeros((rows, w))
+
+def getTimeStr(t, fmt):
+
+    fsec = float(t) - int(t)
+    f = fmt.replace("%u", ("%.3f" % fsec)[2:])
+    return datetime.fromtimestamp(t).strftime(f)
+
+
+def drawSplitTime(y, x1, x2, tw, t1, t2, color, fmt):
+
+    # Is there enough room for more time?
+    r = x2 - x1
+    if r < (tw * 4):
+        return
+
+    # Time halfway point
+    th = t2 - ((t2 - t1) / 2)
+
+    # Line halfway point
+    xh = int(x2 - ((x2 - x1) / 2))
+
+    # Draw timestamp at the half way point
+    stdscr.addstr(y, int(xh - (tw / 2)), getTimeStr(th, fmt), color)
+    stdscr.addstr(y + 1, xh, "|", color)
+
+    # Draw more markers
+    drawSplitTime(y, x1, xh, tw, t1, th, color, fmt)
+    drawSplitTime(y, xh, x2, tw, th, t2, color, fmt)
+
+
+def drawTimeline(ti, x, y, start, end, color):
+
+    # Can it be drawn?
+    if end <= start:
+        return False
+
+    # The current time
+    now = time.time()
+
+    # Range
+    r = end - start
+    if abs(now - start) > r:
+        r = abs(now - start)
+    if abs(now - end) > r:
+        r = abs(now - end)
+
+    # Choose a time format
+    if 30 > r:
+        tw = 12
+        fmt = "%H:%M:%S.%u"
+    elif (12 * 60 * 60) > r:
+        tw = 8
+        fmt = "%H:%M:%S"
+    elif (3 * 24 * 60 * 60) > r:
+        tw = 10
+        fmt = "%a %H:%M"
+    elif (20 * 24 * 60 * 60) > r:
+        tw = 12
+        fmt = "%b %-d %H:%M"
+    elif (100 * 24 * 60 * 60) > r:
+        tw = 6
+        fmt = "%b %-d"
+    else:
+        tw = 12
+        fmt = "%b %-d, %Y"
+
+    # Update timeline data
+    ti['x'] = x
+    ti['y'] = y
+    ti['start'] = start
+    ti['end'] = end
+
+    # Get width / height
+    w = ti['w'] - x - 2
+    h = ti['h']
+
+    # Draw the timeline
+    for i in range(x, x + w):
+        stdscr.addstr(y + 1, i, "-", color)
+
+    # Draw start time
+    fsec = float(start) - int(start)
+    stdscr.addstr(y, x, getTimeStr(start, fmt), color)
+    stdscr.addstr(y + 1, x, "|", color)
+
+    # Draw end time
+    fsec = float(end) - int(end)
+    stdscr.addstr(y, x + w - tw, getTimeStr(end, fmt), color)
+    stdscr.addstr(y + 1, x + w - 1, "|", color)
+
+    # Draw time markers in between
+    drawSplitTime(y, x, x + w, tw, start, end, color, fmt)
+
+    # Draw "now" marker
+    nowmrk = "|"
+    if start < now and end > now:
+        xn = int((now - start) * w / (end - start))
+    elif start > now:
+        xn = 0
+        nowmrk = "<"
+    else:
+        xn = w - 1
+        nowmrk = ">"
+
+    stdscr.addstr(y + 1, x + xn, nowmrk, curses.color_pair(4))
+
+    return True
+
+
+def showTimelineRowNums(ti, pg, lines):
+
+    y = 4
+    x = 0
+    maxdisp = ti['max_disp']
+
+    n = pg
+    for i in range(0, ti['max_disp']):
+        n += 1
+        stdscr.addstr(y + (i * lines), x, "%02d" % n, curses.color_pair(1))
+
+
+def showTimelineItem(ti, pg, lines, inf, tmin, tmax):
+
+    y = 4
+    x = 4
+
+    tr = tmax - tmin
+    w = ti['w'] - x - 2
+    h = ti['h']
+
+    # Event time
+    t = getVal(inf, 'time', 0)
+
+    # Start position
+    p = int((float(inf['time']) - tmin) * w / tr)
+
+    # Number of displayable slots
+    maxdisp = int((h - y - 2) / lines)
+    ti['max_disp'] = maxdisp
+
+    # Must fall onto screen
+    if p < 0:
+        p = 0
+    elif p >= w:
+        p = w - 1
+
+    # Display message
+    msg = inf['msg']
+
+    # String size
+    if 1 < lines:
+        maxtxt = len(msg) + 1
+    else:
+        maxtxt = 1
+
+    # Clip to screen
+    if maxtxt > (w - p):
+        maxtxt = w - p
+
+    # Anything to do?
+    if 0 >= maxtxt:
+        return
+
+    # Item color
+    col = 10
+    sev = int(getVal(inf, 'sev', 6))
+    if 1 > sev:
+        sev = 1
+    if sev < 6:
+        col = 16 - sev
+
+    # Log the in-use point
+    if 0 >= ti['inuse'][p] or col > ti['inuse'][p]:
+        ti['inuse'][p] = col
+
+    # Does the item already have a preferred slot?
+    pslot = getVal(inf, 'slot', 0)
+    slot = -1
+    slots = ti['slots']
+    maxslots = len(slots)
+
+    # Find a slot
+    for s in range(0, maxslots):
+
+        # Is there room for text in this slot?
+        for i in range(0, maxtxt):
+
+            # Break if someone else is in this slot
+            if slots[s][p + i]:
+                break;
+
+        # Is the slot clear?
+        if not slots[s][p + i]:
+
+            # Preferred slot?
+            if s >= pslot:
+                slot = s
+                break
+
+            # Move up if no other labels are too close
+            preclear = (1 >= p) or (not slots[s][p - 1] and not slots[s][p - 2])
+            postclear = ((p + i + 2) > w) or (not slots[s][p + i + 1] and not slots[s][p + i + 2])
+
+            # Prevent slot aliasing
+            if preclear and postclear:
+                slot = s
+                break
+
+    # Mark preferred slot (even if we didn't get a slot)
+    inf['slot'] = s if 0 > slot else slot
+
+    # Track max slot
+    if ti['max_slot'] < slot:
+        ti['max_slot'] = slot
+
+    # Did we find a slot?
+    if 0 > slot:
+        return False
+
+    # Claim the slot
+    for i in range(p, p + maxtxt):
+        slots[slot][i] = 1
+
+    # Show what we have room for
+    if 0 < maxtxt and slot >= pg and (slot - pg) < maxdisp:
+
+        # Only one line per slot, just show |
+        if 1 == lines:
+            stdscr.addstr(y + slot - pg, x + p, "|", curses.color_pair(col + 10))
+
+        # More than one line per slot, show time and description
+        elif 1 < lines:
+
+            # Is there room for time string?
+            if 14 <= (w - p):
+                fsec = float(t) - int(t)
+                tt = datetime.fromtimestamp(t).strftime("%H:%M:%S") + ("%.3f" % fsec)[1:]
+                stdscr.addstr(y + ((slot - pg) * lines), x + p, "| " + tt, curses.color_pair(col + 10))
+            else:
+                stdscr.addstr(y + ((slot - pg) * lines), x + p, "|", curses.color_pair(col + 10))
+
+            # Show the description
+            stdscr.addstr(y + ((slot - pg) * lines) + 1, x + p, msg[:maxtxt], curses.color_pair(col))
+
+    # Something worked
+    return True
+
+
+#-------------------------------------------------------------------
+# File parsing
+
+def calcPriority(s):
+    if 0 <= s.lower().find('error'):
+        return 1
+    elif 0 <= s.lower().find('warn'):
+        return 2
+    return 6
+
+
+def processLineDate(s):
+
+    if not len(s):
+        return {}
+
+    # Look for a date
+    ln, d = findDate(s)
+
+    # Did we find a date?
+    if 0 >= ln:
+        return {}
+
+    # Get timestamp
+    try:
+        ts = time.mktime(d.timetuple())
+    except:
+        return {}
+
+    s = s[ln:].lstrip()
+
+    return { 'time': ts, 'msg': s, 'sev': calcPriority(s) }
+
+
+def processLineAuto(s):
+
+    if not len(s):
+        return {}
+
+    ok = False
+    t = time.time()
+    p = -1
+
+    # Seconds in a year
+    year = 60 * 60 * 24 * 365
+
+    # Look for a formated string
+    d = s.split(" ", 1)
+    if 1 < len(d):
+        try:
+
+            # Attempt to read time
+            _t = float(d[0])
+
+            # Does it kinda look like a timestamp?
+            if (t - year) < _t and (t + year) > _t:
+                t = _t
+                s = d[1]
+                ok = True
+
+                # Try for a priority
+                d = s.split(" ", 1)
+                if 1 < len(d):
+                    try:
+                        _p = int(d[0])
+                        if 0 < _p and 100 > _p:
+                            p = _p
+                            s = d[1]
+                    except:
+                        pass
+
+        except:
+            pass
+
+    # If that failed, try for a date
+    if not ok:
+
+        r = processLineDate(s)
+
+        if 0 < len(r):
+            return r
+
+    if 0 > p:
+        p = calcPriority(s)
+
+    # Send what we got
+    return { 'time': t, 'sev': p, 'msg': s }
+
+
+def processLineKMsg(s):
+
+    d = s.split(",")
+
+    if len(d) < 4:
+        return {}
+
+    t = float(psutil.boot_time())
+
+    if not t:
+        t = time.time()
+
+    return { 'sev':d[0], 'seq':d[1], 'offset':d[2], 'time':float(d[2]) / 1000000.0 + t, 'msg':d[3] }
+
+
+def processLineWww(s):
+
+    d = shlex.split(s.replace('[', '"').replace(']', '"'))
+
+    if len(d) < 7:
+        return {}
+
+    ip = d[0]
+    dt = d[3]
+    ln = d[4]
+    st = d[5]
+    sz = d[6]
+
+    # +++ Fix the timezone...
+
+    # Python 3+
+    #d = datetime.strptime(dt, "%d/%b/%Y:%H:%M:%S %z");
+    #t = time.mktime(d.timetuple())
+
+#	d = dt.split(" ")
+    d = dt
+
+    #if len(d):
+    #	t = datetime.strptime(d[0],'%d/%b/%Y:%H:%M:%S')
+    #	if d[1][0] == '+':
+    #		t -= timedelta(hours = int(d[1][1:2]), minutes = int(d[1][3:]))
+    #	elif d[1][0] == '-':
+    #		t += timedelta(hours = int(d[1][1:2]), minutes = int(d[1][3:]))
+
+    t = time.time()
+
+    if len(d):
+        try:
+            d = dateutil.parser.parse(d, fuzzy=True)
+            if d:
+                t = time.mktime(d.timetuple())
+        except:
+            t = time.time()
+
+    try:
+        st = int(st)
+    except:
+        st = 200
+
+    sev = 6
+    if 500 <= st:
+        sev = 1
+    elif 400 <= st:
+        sev = 2
+    elif 300 <= st:
+        sev = 3
+
+    return { 'sev':sev, 'time':t, 'msg':ip + " : " + str(st) + " : " + sz + " : " + ln }
+
+
+def processLine(p, s):
+
+    type = p['inputformat'].lower()
+
+    if 'text' == type:
+        return { 'time': time.time(), 'msg': s, 'sev': calcPriority(s) }
+
+    elif 'date' == type:
+        return processDate(s)
+
+    elif 'kmsg' == type:
+        return processLineKMsg(s)
+
+    elif 'www' == type:
+        return processLineWww(s)
+
+    return processLineAuto(s)
+
+
+def filterLine(filter, s):
+
+    if not len(s):
+        return {}, ''
+
+    # Do we have a filter?
+    if not len(filter):
+        return {}, s
+
+    try:
+
+        # Apply filter
+        m = re.match(filter, s)
+        if not m:
+            return {}, ''
+
+        # Grab the results
+        g = m.groupdict()
+        if not g:
+            g = {}
+
+        # Stuff integer values into dictionary
+        try:
+            for i in range(1, 10):
+                g[str(i)] = m.group(i)
+        except:
+            pass
+
+        r = {}
+
+        # Message
+        if 'msg' in g:
+            s = g['msg']
+            r['msg'] = s
+        elif '1' in g:
+            s = g['1']
+            r['msg'] = s
+
+        # Punt if we didn't get a message
+        if not len(s):
+            return {}, ''
+
+        # Did we get a time?
+        if 'time' in g:
+            r['time'] = g['time']
+        elif '2' in g:
+            r['time'] = g['2']
+
+        # Did we get a severity?
+        if 'sev' in g:
+            r['sev'] = g['sev']
+        elif '3' in g:
+            r['sev'] = g['3']
+
+        # Process time
+        if 'time' in r:
+            try:
+                r['time'] = float(r['time'])
+            except:
+                try:
+                    d = dateutil.parser.parse(txt[:max])
+                    if d:
+                        r['time'] = time.mktime(d.timetuple())
+                    else:
+                        del r['time']
+                except:
+                    del r['time']
+
+            # fractional seconds
+            if 'time' in r:
+                try:
+                    if 'nsecs' in g:
+                        r['time'] += float("0.%09d" % int(g['nsecs']))
+                    if 'usecs' in g:
+                        r['time'] += float("0.%06d" % int(g['nsecs']))
+                    if 'msecs' in g:
+                        r['time'] += float("0.%03d" % int(g['nsecs']))
+                except:
+                    pass
+
+        # Process severity
+        if 'sev' in r:
+            try:
+                r['sev'] = int(r['sev'])
+            except:
+                r['sev'] = calcPriority(s)
+
+        return r, s
+
+    except:
+        pass
+
+    return {}, ''
+
+
+#-------------------------------------------------------------------
+# Functions
+
+inbuf = ''
+def getLine(fh, sep = ''):
+    global inbuf
+
+    # Make sure the file is ready to read
+    while fh in select.select([fh], [], [], 0)[0]:
+
+        # Try to read a line
+        s = fh.readline()
+
+        if not isinstance(s, str):
+            s = s.decode()
+
+        # Filter control characters
+        s = "".join(ch for ch in s if unicodedata.category(ch)[0]!="C")
+
+        # Custom separator?
+        if not sep or not len(sep):
+            return s
+
+        # Buffer
+        inbuf += s
+
+        # Look for separator
+        pos = inbuf.find(sep)
+        if 0 <= pos:
+            s = inbuf[:pos]
+            inbuf = inbuf[pos + len(sep):]
+            return s
+
+    return ''
+
+def getVal(a, k, d = 0):
+
+    if type(a) is list:
+        if len(a) > k:
+            return a[k]
+
+    elif type(a) is dict:
+        if k in a:
+            return a[k]
+
+    return d
+
+
+def setFilePtr(fh, max):
+
+    sz = os.fstat(fh.fileno()).st_size
+    if 0 >= sz:
+        return 0
+
+    if 0 <= max:
+
+        if max > sz:
+            max = sz
+
+        return fh.seek(max, os.SEEK_BEGIN)
+
+    max = -max
+    if max > sz:
+        max = sz
+
+    return fh.seek(-max, os.SEEK_END)
+
+
+def findDate(txt):
+
+    # Don't check more than 40 chars
+    max = len(txt)
+    if 40 < max:
+        max = 40
+
+    fm = 0
+    fd = 0
+
+    # Work our way backward through possible string lengths
+    while 8 <= max:
+
+        try:
+            d = dateutil.parser.parse(txt[:max])
+
+            # We'll take the longest valid date
+            if fd and d != fd:
+                return fm, fd
+
+            fm = max
+            fd = d
+
+        except:
+            pass
+
+        max -= 1
+
+    # Did we find a date?
+    if not fd:
+        return 0, 0
+
+    return fm, fd
+
+
+def makeDisplayPath(path, max, sep = '/', rm = '...'):
+
+    if len(path) <= max:
+        return path
+
+    p = path.split(sep)
+    if not len(p):
+        return path[0 : max-len(rm)] + rm
+
+    ml = len(p)
+    while len(path) > max:
+
+        ml -= 1
+        if 0 >= ml or 2 >= len(p):
+            return path[0 : max-len(rm)] + rm
+
+        else:
+            p = p[0 : len(p) - 2] + [p[-1]]
+            path = sep.join(p[ 0 : len(p) - 2] + [rm, p[-1]])
+
+    return path;
+
+
+def drawScreen(p, ti, msgs = []):
+    global stdscr
+
+    # Erase screen
+    stdscr.erase()
+
+    # Current time
+    t = p['time']
+    lines = p['lines']
+
+    # Screen width / height
+    w = ti['w']
+    h = ti['h']
+
+    # Time range we will be displaying
+    time_range = getVal(p, 'timerange', 60)
+    tmin = t
+    tmax = t + time_range
+    tr = tmax - tmin
+
+    # Screen position range
+    pr = w - 1
+
+    # Show timeline
+    drawTimeline(ti, 4, 1, tmin, tmax, curses.color_pair(1))
+
+    # Clear slots
+    clearTimeSlots(ti, w, h)
+    ti['inuse'] = [0] * w
+    ti['max_slot'] = 0
+
+    # For each severity level
+    for k in range(1, 5):
+
+        # For each message
+        for i in msgs:
+
+            # Get severity
+            sev = int(getVal(i, 'sev', 6))
+
+            # Order by severity
+            if k == sev or (4 == k and ( 0 >= sev or 4 <= sev)):
+
+                if 'time' in i:
+
+                    try:
+                        tm = float(i['time'])
+                    except:
+                        continue
+
+                    # Is it in the range of the display?
+                    if tm > tmin and tm < tmax:
+
+                        showTimelineItem(ti, p['page'], lines, i, tmin, tmax)
+
+
+    # Draw row numbers
+    showTimelineRowNums(ti, p['page'], lines)
+
+    # Draw the in-use line
+    for i in range(0,len(ti['inuse'])):
+        if 0 < ti['inuse'][i]:
+            stdscr.addstr(3, 4 + i, '^', curses.color_pair(ti['inuse'][i] + 10))
+
+    # Update max page
+    if ti['max_disp'] < ti['max_slot']:
+        p['max_page'] = ti['max_slot'] - ti['max_disp']
+    else:
+        p['max_page'] = 0
+
+
+def initCurses():
+    global stdscr
+
+    # Init curses
+    stdscr = curses.initscr()
+    stdscr.keypad(1)
+    stdscr.nodelay(1)
+
+    curses.start_color()
+    curses.cbreak()
+    curses.noecho()
+    curses.curs_set(0)
+
+    # Screen colors
+    curses.init_pair(1, curses.COLOR_GREEN, curses.COLOR_BLACK)
+    curses.init_pair(2, curses.COLOR_BLACK, curses.COLOR_GREEN)
+    curses.init_pair(3, curses.COLOR_WHITE, curses.COLOR_RED)
+    curses.init_pair(4, curses.COLOR_RED, curses.COLOR_BLACK)
+
+    # Inverted timeline colors
+    curses.init_pair(10, curses.COLOR_BLACK, curses.COLOR_GREEN)
+    curses.init_pair(11, curses.COLOR_BLACK, curses.COLOR_CYAN)
+    curses.init_pair(12, curses.COLOR_BLACK, curses.COLOR_BLUE)
+    curses.init_pair(13, curses.COLOR_BLACK, curses.COLOR_MAGENTA)
+    curses.init_pair(14, curses.COLOR_BLACK, curses.COLOR_YELLOW)
+    curses.init_pair(15, curses.COLOR_BLACK, curses.COLOR_RED)
+
+    # Non inverted timeline colors
+    curses.init_pair(20, curses.COLOR_GREEN, curses.COLOR_BLACK)
+    curses.init_pair(21, curses.COLOR_CYAN, curses.COLOR_BLACK)
+    curses.init_pair(22, curses.COLOR_BLUE, curses.COLOR_BLACK)
+    curses.init_pair(23, curses.COLOR_MAGENTA, curses.COLOR_BLACK)
+    curses.init_pair(24, curses.COLOR_YELLOW, curses.COLOR_BLACK)
+    curses.init_pair(25, curses.COLOR_RED, curses.COLOR_BLACK)
+
+
+#-------------------------------------------------------------------
+# Main
+
+def main():
+    global stdscr, msgs
+
+    #---------------------------------------------------------------
+    # Parse command line arguments
+
+    ap = argparse.ArgumentParser(description='Event monitor.')
+
+    ap.add_argument('--inputfile', '-i', default='', type=str, help='Log file to parse')
+    ap.add_argument('--inputformat', '-I', default='auto', type=str, help='Input data format')
+    ap.add_argument('--inputbreak', '-b', default='', type=str, help='Line break')
+    ap.add_argument('--inputtemplate', '-T', default='', type=str, help='Regex template expression for input data')
+    ap.add_argument('--outputfile', '-o', default='', type=str, help='Append logs to output file')
+    ap.add_argument('--outputformat', '-O', default='', type=str, help='Output data format')
+    ap.add_argument('--separator', '-s', default='', type=str, help='Input data separator, defualt is CR/LF')
+    ap.add_argument('--filter', '-f', default='', type=str, help='Show only lines matching the Regex expression')
+    ap.add_argument('--exclude', '-x', default='', type=str, help='Filter out lines matching the Regex expression')
+
+    ap.add_argument('--timerange', '-r', default=600.0, type=float, help='Time range')
+    ap.add_argument('--time', '-t', default=0, type=str, help='Time start')
+
+    ap.add_argument('--refresh', '-R', default=3, type=float, help='Data refresh interval in seconds, 0 for no refresh')
+    ap.add_argument('--autoscroll', '-a', default=75, type=int, help='1-100, percentage of screen for auto scroll position, 0 = Do not auto scroll')
+    ap.add_argument('--lines', '-l', default=2, type=int, help='Number of lines per timeline item, can be 1, 2, or 3')
+    ap.add_argument('--maxmsgbuf', '-m', default=5000, type=int, help='Maxium number of messages to queue')
+    ap.add_argument('--maxfileread', '-M', default=10000, type=int, help='Maxium number of bytes to read from a file, 0 for all')
+    ap.add_argument('--keyboard', '-k', action='store_true', help='Force keyboard processing')
+    ap.add_argument('--debug', '-D', action='store_true', help='Show debug information')
+
+    # Get arguments
+    p = vars(ap.parse_args())
+
+    # +++ Need a better compromise with the command line
+    p['separator'] = p['separator'].replace("\\", "")
+
+
+    #---------------------------------------------------------------
+    # Initialize
+
+    # Will our input come from stdin?
+    usestdin = p['inputfile'] == '-'
+
+    # Default to system log
+    if not p['inputfile']:
+        p['inputfile'] = '/var/log/syslog'
+
+    # Bound check scroll, on second thought, why not allow now position to be offscreen?
+#	if 0 > p['autoscroll']:
+#		p['autoscroll'] = 0
+#	elif 100 < p['autoscroll']:
+#		p['autoscroll'] = 100
+
+    # Initialize scroll mode
+    scroll = p['autoscroll']
+    if 0 == p['autoscroll']:
+        p['autoscroll'] = 75
+
+    # Data buffer
+    msgs = []
+    msgs_time = 0
+
+    # Data source
+    fh = 0 if not usestdin else sys.stdin
+
+    # Output file handle
+    fo = 0
+
+    # Page offset
+    p['page'] = 0
+    p['max_page' ] = 0
+
+    #---------------------------------------------------------------
+    # Catch exceptions so we can restore the screen
+    try:
+
+        # Init Curses
+        initCurses()
+
+        # Screen width / height
+        h, w = stdscr.getmaxyx()
+
+        # Initialize timeline
+        ti = initTimeline(w, h)
+
+        # Draw initial screen
+        drawScreen(p, ti)
+
+        # Turn off refresh interval for stdin
+        if usestdin:
+            p['refresh'] = 0
+
+        # Open output file if we need one
+        if len(p['outputfile']):
+            fo = open(p['outputfile'], 'ab')
+
+        run = 1
+
+        #-----------------------------------------------------------
+        # Run the loop
+        while run:
+
+            # Current time
+            now = time.time()
+
+            #-------------------------------------------------------
+            # Process key presses
+
+            # No key press yet
+            waskey = 0
+
+            # Don't poll the keyboard if we're getting data from stdin
+            if usestdin and not p['keyboard']:
+                key = 0
+            else:
+                key = stdscr.getch()
+
+            # Did we get a key press?
+            while 0 < key:
+
+                waskey = key
+
+                # Was there a screen resize?
+                if curses.KEY_RESIZE == key:
+                    w = 0
+                    h = 0
+
+                # Zoom in
+                elif curses.KEY_UP == key:
+                    if 0.001 < p['timerange']:
+                        p['time'] += p['timerange'] / 20
+                        p['timerange'] /= 1.1
+
+                # Zoom out
+                elif curses.KEY_DOWN == key:
+                    if 1000000000 > p['timerange']:
+                        p['time'] -= p['timerange'] / 20
+                        p['timerange'] *= 1.1
+
+                # Scroll right
+                elif curses.KEY_RIGHT == key:
+                    scroll = 0
+                    p['time'] += float(p['timerange']) / 20
+
+                # Scroll left
+                elif curses.KEY_LEFT == key:
+                    scroll = 0
+                    if 0 < (p['time'] - float(p['timerange']) / 20):
+                        p['time'] -= float(p['timerange']) / 20
+
+                # Page up
+                elif curses.KEY_PPAGE == key:
+                    if 0 < p['page']:
+                        p['page'] -= 1
+
+                # Page down
+                elif curses.KEY_NPAGE == key:
+                    if p['max_page'] > p['page']:
+                        p['page'] += 1
+
+                # Lines per timeline item
+                elif 'l' == chr(key).lower():
+                    p['lines'] += 1
+                    if 3 < p['lines']:
+                        p['lines'] = 1
+
+                # Auto scrolling
+                elif 's' == chr(key).lower():
+                    scroll = p['autoscroll']
+
+                # Quit on Escape or 'q'
+                elif 27 == key or 'q' == chr(key).lower():
+                    run = 0
+                    break
+
+                # See if there is another key waiting
+                key = stdscr.getch()
+
+
+            # Ensure reasonable page
+            if p['max_page'] < p['page']:
+                p['page'] = p['max_page']
+
+            #-------------------------------------------------------
+            # Get Data
+
+            # Refresh messages
+            if usestdin or 0 >= len(msgs) or 0 > p['refresh'] or (p['refresh'] and now > msgs_time):
+
+                # Resolve input
+                if not usestdin:
+
+                    # Open data stream if needed
+                    if not fh:
+
+                        # Open file stream
+                        fh = open(p['inputfile'], 'rb')
+
+                        # Don't read to much data
+                        if 0 != p['maxfileread']:
+
+                            # Back up from the end
+                            setFilePtr(fh, -p['maxfileread'])
+
+                            # Eat potential partial line
+                            getLine(fh, p['separator'])
+
+                # Read data from input stream
+                while True:
+
+                    s = getLine(fh, p['separator'])
+                    if not len(s):
+                        break;
+
+                    # Filtering lines
+                    if len(p['filter']) and not re.search(p['filter'], s):
+                        continue
+
+                    # Filtering out lines
+                    if len(p['exclude']) and re.search(p['exclude'], s):
+                        continue
+
+                    # Do we have a line template?
+                    if len(p['inputtemplate']):
+
+                        # Run the line through the filter
+                        r, s = filterLine(p['inputtemplate'], s)
+
+                        if not len(s):
+                            continue
+
+                        # Did the filter yield components?
+                        if not len(r):
+                            r = processLine(p, s)
+
+                    # Default processing
+                    else:
+                        r = processLine(p, s)
+
+                    # Did we get something to log?
+                    if 0 <= len(r):
+
+                        # Append to memory buffer
+                        msgs.append(r)
+
+                        # Append to output file
+                        if fo and 'msg' in r and 'time' in r:
+
+                            t = r['time']
+                            sev = 6
+                            msg = r['msg']
+
+                            if 'sev' in r:
+                                sev = r['sev']
+
+                            fo.write(str(t) + " " + str(sev) + " " + str(msg) + "\n")
+
+                # Prune excess messages
+                if len(msgs) > p['maxmsgbuf']:
+                    msgs = msgs[len(msgs) - p['maxmsgbuf']:]
+
+                # Close pipe if not refreshing
+                if not usestdin and fh and not p['refresh']:
+                    fh.close()
+                    fh = 0
+
+                # Save data time
+                msgs_time = now + p['refresh']
+
+
+            #-------------------------------------------------------
+            # Update the terminal
+
+            # Auto scroll?
+            if scroll:
+                p['time'] = now - (p['timerange'] * scroll / 100)
+
+            # Check for terminal resize
+            _h, _w = stdscr.getmaxyx()
+            if _h != h or _w != w:
+                h = _h
+                w = _w
+                ti = initTimeline(w, h)
+
+            # Update the screen
+            try:
+                drawScreen(p, ti, msgs)
+
+            # If curses complains, it's probably a terminal resize
+            except curses.error:
+                pass
+
+            # Debug info
+            if p['debug']:
+                stdscr.addstr(0, 1, str(len(msgs)) + " : " + str(p))
+
+            # Draw file name
+            if '-' == p['inputfile']:
+                fname = '[stdin]'
+            else:
+                fname = makeDisplayPath(p['inputfile'], w - 3)
+            stdscr.addstr(0, 2, fname)
+
+            # Home the cursor
+            stdscr.addstr(0, 0, ">")
+
+            # Refresh the terminal
+            stdscr.refresh()
+
+            # Pause if no keys being pressed
+            if 0 >= waskey:
+                time.sleep(.25)
+
+    # CTRL+C
+    except KeyboardInterrupt:
+        pass
+
+    # Show other exceptions
+    except:
+        if fo:
+            fo.close()
+        curses.endwin()
+        Log("...EXCEPTION...")
+        raise
+
+    if fo:
+        fo.close()
+
+    curses.endwin()
+
+
+if __name__ == '__main__':
+    main()
+

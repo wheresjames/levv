@@ -1,0 +1,10 @@
+name            levv
+version         0.1.1
+description     Conference Monitoring
+company         WheresJames
+author          Robert Umbehant
+email           levv@wheresjames.com
+url             https://github.com/wheresjames/levv
+repo            git+ssh://git@github.com/wheresjames/levv.git
+bugs            https://github.com/wheresjames/levv/issues
+license         Private
