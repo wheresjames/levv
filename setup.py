@@ -40,10 +40,9 @@ setup(
     long_description_content_type='text/markdown',
     install_requires=[
             'argparse',
-            'propertybag',
-            'sparen',
-            'threadmsg',
-            'websocket-client'
+            'numpy',
+            'psutil',
+            'python-dateutil'
         ],
     dependency_links=[
         ]

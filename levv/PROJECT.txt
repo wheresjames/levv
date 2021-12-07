@@ -1,6 +1,6 @@
 name            levv
-version         0.1.1
-description     Conference Monitoring
+version         0.1.4
+description     Graphical log file viewer
 company         WheresJames
 author          Robert Umbehant
 email           levv@wheresjames.com
