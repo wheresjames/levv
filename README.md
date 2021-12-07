@@ -19,6 +19,7 @@ Command line based graphical log file viewer.
 
 &nbsp;
 
+
 ---------------------------------------------------------------------
 ## Install
 
@@ -30,21 +31,27 @@ Command line based graphical log file viewer.
 ---------------------------------------------------------------------
 ## Examples
 
-* Navigate kernel messages
+* kernel messages
 
-`sudo levv -i /dev/kmsg -I kmsg`
+`levv -i /dev/kmsg -I kmsg`
 
-* Navigate syslog messages
+* syslog messages
 
-`sudo levv -i /var/log/syslog`
+`levv -i /var/log/syslog`
 
-* Navigate Apache web logs
+* Apache web logs
 
-`sudo levv -i /var/log/apache2/access.log -I www`
+`levv -i /var/log/apache2/access.log -I www`
 
-* View data from stdin
+* nginx web logs
+
+`levv -i /var/log/nginx/access.log -I www`
+
+* View data from stdin / pipe
 
 `echo "Hello World!" | levv -i -`
+
+`tail -f /path/to/some/file.log | levv -i -`
 
 &nbsp;
 

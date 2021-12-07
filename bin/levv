@@ -481,19 +481,19 @@ def processLine(p, s):
     return processLineAuto(s)
 
 
-def filterLine(filter, s):
+def filterLine(fstr, s):
 
     if not len(s):
         return {}, ''
 
     # Do we have a filter?
-    if not len(filter):
+    if not len(fstr):
         return {}, s
 
     try:
 
         # Apply filter
-        m = re.match(filter, s)
+        m = re.match(fstr, s)
         if not m:
             return {}, ''
 
@@ -980,6 +980,26 @@ def main():
                 # Auto scrolling
                 elif 's' == chr(key).lower():
                     scroll = p['autoscroll']
+
+                # Auto scrolling
+                elif '1' == chr(key):
+                    scroll = 10
+                elif '2' == chr(key):
+                    scroll = 20
+                elif '3' == chr(key):
+                    scroll = 30
+                elif '4' == chr(key):
+                    scroll = 40
+                elif '5' == chr(key):
+                    scroll = 50
+                elif '6' == chr(key):
+                    scroll = 60
+                elif '7' == chr(key):
+                    scroll = 70
+                elif '8' == chr(key):
+                    scroll = 80
+                elif '9' == chr(key):
+                    scroll = 90
 
                 # Quit on Escape or 'q'
                 elif 27 == key or 'q' == chr(key).lower():
