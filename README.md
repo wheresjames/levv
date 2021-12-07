@@ -5,17 +5,6 @@ Command line based graphical log file viewer.
 
 ![Screen Shot](https://raw.githubusercontent.com/wheresjames/levv/main/imgs/view-syslog.png)
 
-## Keyboard
-
-* LEFT = Scroll back in time
-* RIGHT = Scroll forward in time
-* UP = Zoom in
-* Down = Zoom out
-
-* s = Scroll automatically
-* l = Change number of lines per record
-* q / esc = Quit
-
 &nbsp;
 
 
@@ -54,6 +43,18 @@ Command line based graphical log file viewer.
 * View data from stdin
 
 `echo "Hello World!" | levv -i -`
+
+
+## Keyboard
+
+* LEFT = Scroll back in time
+* RIGHT = Scroll forward in time
+* UP = Zoom in
+* Down = Zoom out
+
+* s = Scroll automatically
+* l = Change number of lines per record
+* q / esc = Quit
 
 
 ## Help
