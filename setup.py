@@ -40,7 +40,6 @@ setup(
     long_description_content_type='text/markdown',
     install_requires=[
             'argparse',
-            'numpy',
             'psutil',
             'python-dateutil'
         ],

@@ -9,7 +9,6 @@ import re
 import sys
 import string
 import curses
-import numpy
 import select
 import psutil
 import unicodedata
@@ -45,7 +44,7 @@ def initTimeline(w, h):
         rows = 500
 
     return {'w': w, 'h': h, 'x': 0, 'y': 0, 'start': 0, 'end': 0, \
-            'max_disp': 0, 'max_slot': 0, 'slots': numpy.zeros((rows, w)) }
+            'max_disp': 0, 'max_slot': 0, 'slots': [[0 for x in range(rows)] for x in range(w)] }
 
 
 def clearTimeSlots(ti, w, h):
@@ -55,7 +54,7 @@ def clearTimeSlots(ti, w, h):
     if 500 > rows:
         rows = 500
 
-    ti['slots'] = numpy.zeros((rows, w))
+    ti['slots'] = [[0 for x in range(rows)] for x in range(w)]
 
 def getTimeStr(t, fmt):
 
@@ -245,7 +244,7 @@ def showTimelineItem(ti, pg, lines, inf, tmin, tmax):
 
             # Break if someone else is in this slot
             if slots[s][p + i]:
-                break;
+                break
 
         # Is the slot clear?
         if not slots[s][p + i]:
