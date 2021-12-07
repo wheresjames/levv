@@ -13,6 +13,8 @@ Command line based graphical log file viewer.
 
 * [Install](#install)
 * [Examples](#examples)
+* [Keyboard](#keyboard)
+* [Command Line](#command-line)
 * [References](#references)
 
 &nbsp;
@@ -44,7 +46,10 @@ Command line based graphical log file viewer.
 
 `echo "Hello World!" | levv -i -`
 
+&nbsp;
 
+
+---------------------------------------------------------------------
 ## Keyboard
 
 * LEFT = Scroll back in time
@@ -56,8 +61,11 @@ Command line based graphical log file viewer.
 * l = Change number of lines per record
 * q / esc = Quit
 
+&nbsp;
 
-## Help
+
+---------------------------------------------------------------------
+## Command Line
 
 ```
 usage: levv [-h] [--inputfile INPUTFILE] [--inputformat INPUTFORMAT]
