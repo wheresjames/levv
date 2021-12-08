@@ -15,4 +15,3 @@ def loadConfig(fname):
                 globals()["__info__"][k] = " ".join(parts).strip()
 
 loadConfig(os.path.join(os.path.dirname(__file__), 'PROJECT.txt'))
-

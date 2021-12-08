@@ -25,6 +25,7 @@ try:
 except Exception as e:
     Log = print
 
+import levv
 
 #-------------------------------------------------------------------
 # Globals
@@ -306,14 +307,6 @@ def showTimelineItem(ti, pg, lines, inf, tmin, tmax):
 #-------------------------------------------------------------------
 # File parsing
 
-def calcPriority(s):
-    if 0 <= s.lower().find('error'):
-        return 1
-    elif 0 <= s.lower().find('warn'):
-        return 2
-    return 6
-
-
 def processLineDate(s):
 
     if not len(s):
@@ -334,7 +327,7 @@ def processLineDate(s):
 
     s = s[ln:].lstrip()
 
-    return { 'time': ts, 'msg': s, 'sev': calcPriority(s) }
+    return { 'time': ts, 'msg': s, 'sev': levv.calcPriority(s) }
 
 
 def processLineAuto(s):
@@ -386,7 +379,7 @@ def processLineAuto(s):
             return r
 
     if 0 > p:
-        p = calcPriority(s)
+        p = levv.calcPriority(s)
 
     # Send what we got
     return { 'time': t, 'sev': p, 'msg': s }
@@ -467,7 +460,7 @@ def processLine(p, s):
     type = p['inputformat'].lower()
 
     if 'text' == type:
-        return { 'time': time.time(), 'msg': s, 'sev': calcPriority(s) }
+        return { 'time': time.time(), 'msg': s, 'sev': levv.calcPriority(s) }
 
     elif 'date' == type:
         return processDate(s)
@@ -479,101 +472,6 @@ def processLine(p, s):
         return processLineWww(s)
 
     return processLineAuto(s)
-
-
-def filterLine(fstr, s):
-
-    if not len(s):
-        return {}, ''
-
-    # Do we have a filter?
-    if not len(fstr):
-        return {}, s
-
-    try:
-
-        # Apply filter
-        m = re.match(fstr, s)
-        if not m:
-            return {}, ''
-
-        # Grab the results
-        g = m.groupdict()
-        if not g:
-            g = {}
-
-        # Stuff integer values into dictionary
-        try:
-            for i in range(1, 10):
-                g[str(i)] = m.group(i)
-        except:
-            pass
-
-        r = {}
-
-        # Message
-        if 'msg' in g:
-            s = g['msg']
-            r['msg'] = s
-        elif '1' in g:
-            s = g['1']
-            r['msg'] = s
-
-        # Punt if we didn't get a message
-        if not len(s):
-            return {}, ''
-
-        # Did we get a time?
-        if 'time' in g:
-            r['time'] = g['time']
-        elif '2' in g:
-            r['time'] = g['2']
-
-        # Did we get a severity?
-        if 'sev' in g:
-            r['sev'] = g['sev']
-        elif '3' in g:
-            r['sev'] = g['3']
-
-        # Process time
-        if 'time' in r:
-            try:
-                r['time'] = float(r['time'])
-            except:
-                try:
-                    d = dateutil.parser.parse(txt[:max])
-                    if d:
-                        r['time'] = time.mktime(d.timetuple())
-                    else:
-                        del r['time']
-                except:
-                    del r['time']
-
-            # fractional seconds
-            if 'time' in r:
-                try:
-                    if 'nsecs' in g:
-                        r['time'] += float("0.%09d" % int(g['nsecs']))
-                    if 'usecs' in g:
-                        r['time'] += float("0.%06d" % int(g['nsecs']))
-                    if 'msecs' in g:
-                        r['time'] += float("0.%03d" % int(g['nsecs']))
-                except:
-                    pass
-
-        # Process severity
-        if 'sev' in r:
-            try:
-                r['sev'] = int(r['sev'])
-            except:
-                r['sev'] = calcPriority(s)
-
-        return r, s
-
-    except:
-        pass
-
-    return {}, ''
 
 
 #-------------------------------------------------------------------
@@ -858,6 +756,10 @@ def main():
     if not p['inputfile']:
         p['inputfile'] = '/var/log/syslog'
 
+    # Get input template
+    if p['inputformat'] and not p['inputtemplate']:
+        p['inputtemplate'] = getLogTemplate(p['inputformat'])
+
     # Bound check scroll, on second thought, why not allow now position to be offscreen?
 #	if 0 > p['autoscroll']:
 #		p['autoscroll'] = 0
@@ -1054,10 +956,10 @@ def main():
                         continue
 
                     # Do we have a line template?
-                    if len(p['inputtemplate']):
+                    if p['inputtemplate'] and len(p['inputtemplate']):
 
                         # Run the line through the filter
-                        r, s = filterLine(p['inputtemplate'], s)
+                        r, s = levv.filterLine(p['inputtemplate'], s)
 
                         if not len(s):
                             continue
