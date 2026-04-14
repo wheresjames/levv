@@ -530,6 +530,7 @@ def main():
 
     ap = argparse.ArgumentParser(description='Event monitor.')
 
+    ap.add_argument('inputfile_pos', nargs='?', default='', metavar='FILE', help='Log file to parse (positional)')
     ap.add_argument('--inputfile', '-i', default='', type=str, help='Log file to parse')
     ap.add_argument('--inputformat', '-I', default='auto', type=str, help='Input data format')
     ap.add_argument('--inputbreak', '-b', default='', type=str, help='Line break')
@@ -554,6 +555,11 @@ def main():
 
     # Get arguments
     p = vars(ap.parse_args())
+
+    # Positional FILE overrides -i only when -i was not given explicitly
+    if p['inputfile_pos'] and not p['inputfile']:
+        p['inputfile'] = p['inputfile_pos']
+    del p['inputfile_pos']
 
     # Print format list and exit if requested
     if p['listformats']:
