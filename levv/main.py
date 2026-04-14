@@ -10,48 +10,51 @@ try:
 except Exception as e:
     Log = print
 
+# ---------------------------------------------------------------------------
+# Re-export shared utilities so callers that do ``import levv`` keep working
+# ---------------------------------------------------------------------------
+from levv.formats.utils import findDate, calcPriority, parse_time_str  # noqa: F401
+from levv.formats import parse_line, detect_format, list_formats        # noqa: F401
+
+
+# ---------------------------------------------------------------------------
+# Built-in regex templates (used by the -I / --inputformat flag when the
+# format name maps to a regex rather than a dedicated parser module)
+# ---------------------------------------------------------------------------
+
+_TEMPLATES = {
+    'time:': r'(?P<time>.*?): (?P<msg>.*)',
+    'pm2':   r'(?P<sev>.*?)\|.*?\|(?P<time>.*?): (?P<msg>.*)',
+}
+
 
 def getLogTemplate(ty):
-    tmpls = {
-        'time:': '(?P<time>.*?): (?P<msg>.*)',
-        'pm2': '(?P<sev>.*?)\|.*?\|(?P<time>.*?): (?P<msg>.*)'
-    }
-    if ty in tmpls:
-        return tmpls[ty]
-    return None
+    """Return a named regex template string, or None if *ty* is not a template."""
+    return _TEMPLATES.get(ty)
 
 
-def calcPriority(s):
-    if 0 <= s.lower().find('error'):
-        return 1
-    elif 0 <= s.lower().find('warn'):
-        return 2
-    return 6
-
+# ---------------------------------------------------------------------------
+# filterLine — apply a regex template to a raw log line
+# ---------------------------------------------------------------------------
 
 def filterLine(fstr, s):
 
     if not len(s):
         return {}, ''
 
-    # Do we have a filter?
     if not len(fstr):
         return {}, s
 
     try:
-
-        # Apply filter
         m = re.match(fstr, s)
-
         if not m:
             return {}, ''
 
-        # Grab the results
         g = m.groupdict()
         if not g:
             g = {}
 
-        # Stuff integer values into dictionary
+        # Positional groups as fallback
         try:
             for i in range(1, 10):
                 g[str(i)] = m.group(i)
@@ -68,23 +71,22 @@ def filterLine(fstr, s):
             s = g['1']
             r['msg'] = s
 
-        # Punt if we didn't get a message
         if not len(s):
             return {}, ''
 
-        # Did we get a time?
+        # Time
         if 'time' in g:
             r['time'] = g['time']
         elif '2' in g:
             r['time'] = g['2']
 
-        # Did we get a severity?
+        # Severity
         if 'sev' in g:
             r['sev'] = g['sev']
         elif '3' in g:
             r['sev'] = g['3']
 
-        # Process time
+        # Parse time value
         if 'time' in r:
             try:
                 r['time'] = float(r['time'])
@@ -95,22 +97,21 @@ def filterLine(fstr, s):
                         r['time'] = time.mktime(d.timetuple())
                     else:
                         del r['time']
-                except Exception as e:
+                except Exception:
                     del r['time']
 
-            # fractional seconds
             if 'time' in r:
                 try:
                     if 'nsecs' in g:
-                        r['time'] += float("0.%09d" % int(g['nsecs']))
+                        r['time'] += float('0.%09d' % int(g['nsecs']))
                     if 'usecs' in g:
-                        r['time'] += float("0.%06d" % int(g['usecs']))
+                        r['time'] += float('0.%06d' % int(g['usecs']))
                     if 'msecs' in g:
-                        r['time'] += float("0.%03d" % int(g['msecs']))
+                        r['time'] += float('0.%03d' % int(g['msecs']))
                 except Exception:
                     pass
 
-        # Process severity
+        # Parse severity value
         if 'sev' in r:
             try:
                 r['sev'] = int(r['sev'])
@@ -119,8 +120,7 @@ def filterLine(fstr, s):
 
         return r, s
 
-    except Exception as e:
+    except Exception:
         pass
 
     return {}, ''
-
