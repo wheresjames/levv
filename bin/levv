@@ -322,7 +322,7 @@ def processLineDate(s):
     # Get timestamp
     try:
         ts = time.mktime(d.timetuple())
-    except:
+    except Exception:
         return {}
 
     s = s[ln:].lstrip()
@@ -364,10 +364,10 @@ def processLineAuto(s):
                         if 0 < _p and 100 > _p:
                             p = _p
                             s = d[1]
-                    except:
+                    except Exception:
                         pass
 
-        except:
+        except Exception:
             pass
 
     # If that failed, try for a date
@@ -436,12 +436,12 @@ def processLineWww(s):
             d = dateutil.parser.parse(d, fuzzy=True)
             if d:
                 t = time.mktime(d.timetuple())
-        except:
+        except Exception:
             t = time.time()
 
     try:
         st = int(st)
-    except:
+    except Exception:
         st = 200
 
     sev = 6
@@ -457,18 +457,18 @@ def processLineWww(s):
 
 def processLine(p, s):
 
-    type = p['inputformat'].lower()
+    fmt = p['inputformat'].lower()
 
-    if 'text' == type:
+    if 'text' == fmt:
         return { 'time': time.time(), 'msg': s, 'sev': levv.calcPriority(s) }
 
-    elif 'date' == type:
-        return processDate(s)
+    elif 'date' == fmt:
+        return processLineDate(s)
 
-    elif 'kmsg' == type:
+    elif 'kmsg' == fmt:
         return processLineKMsg(s)
 
-    elif 'www' == type:
+    elif 'www' == fmt:
         return processLineWww(s)
 
     return processLineAuto(s)
@@ -533,7 +533,7 @@ def setFilePtr(fh, max):
         if max > sz:
             max = sz
 
-        return fh.seek(max, os.SEEK_BEGIN)
+        return fh.seek(max, os.SEEK_SET)
 
     max = -max
     if max > sz:
@@ -565,7 +565,7 @@ def findDate(txt):
             fm = max
             fd = d
 
-        except:
+        except Exception:
             pass
 
         max -= 1
@@ -647,7 +647,7 @@ def drawScreen(p, ti, msgs = []):
 
                     try:
                         tm = float(i['time'])
-                    except:
+                    except Exception:
                         continue
 
                     # Is it in the range of the display?
@@ -742,8 +742,9 @@ def main():
     # Get arguments
     p = vars(ap.parse_args())
 
-    # +++ Need a better compromise with the command line
-    p['separator'] = p['separator'].replace("\\", "")
+    # Decode escape sequences so e.g. \n and \t work on the command line
+    if p['separator']:
+        p['separator'] = p['separator'].encode('raw_unicode_escape').decode('unicode_escape')
 
 
     #---------------------------------------------------------------
@@ -759,6 +760,16 @@ def main():
     # Get input template
     if p['inputformat'] and not p['inputtemplate']:
         p['inputtemplate'] = getLogTemplate(p['inputformat'])
+
+    # Validate user-supplied regex patterns early so we get a clear error message
+    for flag, val in [('--inputtemplate', p['inputtemplate']),
+                      ('--filter',        p['filter']),
+                      ('--exclude',       p['exclude'])]:
+        if val:
+            try:
+                re.compile(val)
+            except re.error as e:
+                ap.error("%s: invalid regular expression: %s" % (flag, e))
 
     # Bound check scroll, on second thought, why not allow now position to be offscreen?
 #	if 0 > p['autoscroll']:
@@ -807,7 +818,7 @@ def main():
 
         # Open output file if we need one
         if len(p['outputfile']):
-            fo = open(p['outputfile'], 'ab')
+            fo = open(p['outputfile'], 'a')
 
         run = 1
 
@@ -1051,7 +1062,7 @@ def main():
         pass
 
     # Show other exceptions
-    except:
+    except Exception:
         if fo:
             fo.close()
         curses.endwin()

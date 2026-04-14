@@ -55,7 +55,7 @@ def filterLine(fstr, s):
         try:
             for i in range(1, 10):
                 g[str(i)] = m.group(i)
-        except:
+        except Exception:
             pass
 
         r = {}
@@ -88,7 +88,7 @@ def filterLine(fstr, s):
         if 'time' in r:
             try:
                 r['time'] = float(r['time'])
-            except:
+            except Exception:
                 try:
                     d = dateutil.parser.parse(r['time'], fuzzy=True)
                     if d:
@@ -104,17 +104,17 @@ def filterLine(fstr, s):
                     if 'nsecs' in g:
                         r['time'] += float("0.%09d" % int(g['nsecs']))
                     if 'usecs' in g:
-                        r['time'] += float("0.%06d" % int(g['nsecs']))
+                        r['time'] += float("0.%06d" % int(g['usecs']))
                     if 'msecs' in g:
-                        r['time'] += float("0.%03d" % int(g['nsecs']))
-                except:
+                        r['time'] += float("0.%03d" % int(g['msecs']))
+                except Exception:
                     pass
 
         # Process severity
         if 'sev' in r:
             try:
                 r['sev'] = int(r['sev'])
-            except:
+            except Exception:
                 r['sev'] = calcPriority(s)
 
         return r, s
