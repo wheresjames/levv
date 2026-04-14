@@ -796,7 +796,7 @@ def main():
     ap.add_argument('--maxfileread', '-M', default=10000, type=int,
                     help='Maximum number of bytes to read from a file, 0 for all')
     ap.add_argument('--keyboard', '-k', action='store_true',
-                    help='Force keyboard processing')
+                    help='Kept for compatibility; keyboard input is now always enabled')
     ap.add_argument('--debug', '-D', action='store_true', help='Show debug information')
     ap.add_argument('--listformats', action='store_true',
                     help='List supported input formats and exit')
@@ -946,10 +946,23 @@ def main():
     msgs = []
     msgs_time = 0
 
-    # Pre-open stdin file handle
+    # Pre-open stdin file handle.
+    # When stdin is a pipe we redirect fd 0 to /dev/tty so that curses can
+    # read keyboard events from the terminal while log data continues to flow
+    # through a separate file descriptor.  This makes -k unnecessary.
     for fi in files:
         if fi['stdin']:
-            fi['fh'] = sys.stdin
+            if not sys.stdin.isatty():
+                try:
+                    pipe_fd = os.dup(sys.stdin.fileno())
+                    tty = open('/dev/tty', 'r')
+                    os.dup2(tty.fileno(), 0)
+                    tty.close()
+                    fi['fh'] = os.fdopen(pipe_fd, 'r')
+                except OSError:
+                    fi['fh'] = sys.stdin   # fallback: /dev/tty unavailable
+            else:
+                fi['fh'] = sys.stdin
 
     # Output file handle
     fo = 0
@@ -997,11 +1010,7 @@ def main():
 
             waskey = 0
 
-            # Don't poll the keyboard if all inputs are stdin
-            if usestdin and not any(not fi['stdin'] for fi in files) and not p['keyboard']:
-                key = 0
-            else:
-                key = stdscr.getch()
+            key = stdscr.getch()
 
             while 0 < key:
 
