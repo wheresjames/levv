@@ -5,7 +5,6 @@ A graphical log viewer that plots events on an interactive timeline,
 with color-coded severity levels and live auto-scrolling.
 Runs as a terminal UI or in your browser with `-w`.
 
-![Screen Shot](https://raw.githubusercontent.com/wheresjames/levv/main/imgs/view-syslog.png)
 ![Web UI](https://raw.githubusercontent.com/wheresjames/levv/main/imgs/webview-kmsg.png)
 
 &nbsp;
