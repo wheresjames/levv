@@ -75,45 +75,46 @@ class TestMakeDisplayPath:
 
 
 # ---------------------------------------------------------------------------
-# processLine — dispatch through levv.parse_line
+# parse_line dispatch (formerly processLine — now lives in levv.parse_line)
 # ---------------------------------------------------------------------------
+
+import levv as _levv
 
 class TestProcessLine:
 
     def test_text_format_uses_current_time(self, levv_bin):
         before = time.time()
-        r = levv_bin.processLine({'inputformat': 'text'}, 'hello world')
+        r = _levv.parse_line('text', 'hello world')
         after = time.time()
         assert before <= r['time'] <= after
         assert r['msg'] == 'hello world'
 
     def test_date_format_does_not_raise(self, levv_bin):
-        r = levv_bin.processLine({'inputformat': 'date'}, '2023-06-15 12:00:00 an event')
+        r = _levv.parse_line('date', '2023-06-15 12:00:00 an event')
         assert isinstance(r, dict)
 
     def test_date_format_returns_time(self, levv_bin):
-        r = levv_bin.processLine({'inputformat': 'date'}, '2023-06-15 12:00:00 an event')
+        r = _levv.parse_line('date', '2023-06-15 12:00:00 an event')
         assert 'time' in r
 
     def test_kmsg_format(self, levv_bin):
-        r = levv_bin.processLine({'inputformat': 'kmsg'},
-                                 '6,339,5085350,-;kernel message')
+        r = _levv.parse_line('kmsg', '6,339,5085350,-;kernel message')
         assert 'sev' in r and 'time' in r and 'msg' in r
 
     def test_www_format_http_200(self, levv_bin):
         line = ('127.0.0.1 - - [01/Jan/2024:00:00:00 +0000]'
                 ' "GET / HTTP/1.1" 200 512')
-        r = levv_bin.processLine({'inputformat': 'www'}, line)
+        r = _levv.parse_line('www', line)
         assert r['sev'] == 6
 
     def test_auto_format_timestamp(self, levv_bin):
         ts = time.time() - 60
-        r = levv_bin.processLine({'inputformat': 'auto'}, f'{ts} event')
+        r = _levv.parse_line('auto', f'{ts} event')
         assert r['time'] == pytest.approx(ts, abs=1.0)
 
     def test_unknown_format_falls_back_to_auto(self, levv_bin):
         ts = time.time() - 60
-        r = levv_bin.processLine({'inputformat': 'nonexistent'}, f'{ts} event')
+        r = _levv.parse_line('nonexistent', f'{ts} event')
         assert r['time'] == pytest.approx(ts, abs=1.0)
 
 
@@ -176,7 +177,7 @@ class TestSetFilePtr:
 class TestGetLine:
 
     def _reset(self, levv_bin):
-        levv_bin.inbuf = ''
+        levv_bin._inbufs.clear()
 
     def test_reads_single_line(self, levv_bin):
         self._reset(levv_bin)
