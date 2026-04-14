@@ -16,19 +16,32 @@ import os
 from . import auto, text, date, kmsg, www
 from . import syslog, journald, docker, json_lines, logfmt
 from . import nginx_error, python_log, log4j
+from . import w3c_ext, haproxy, apache_error, postgresql, logcat
+from . import gelf, cef, mysql_error, kubernetes, traefik, csv_log
 
 # Ordered list used to build the registry.  Place more-specific formats before
 # generic ones so that probe() tie-breaking naturally picks the right winner.
 _FORMAT_MODULES = [
+    gelf,        # specific JSON shape — before generic json_lines
+    traefik,     # specific JSON shape — before generic json_lines
     json_lines,
+    cef,         # CEF:N|… prefix is unambiguous
     docker,
     syslog,
     journald,
     nginx_error,
+    apache_error,
     python_log,
     log4j,
+    postgresql,
+    mysql_error,
+    haproxy,
+    logcat,
+    kubernetes,  # lower confidence — after docker
     logfmt,
+    w3c_ext,
     www,
+    csv_log,
     kmsg,
     date,
     text,

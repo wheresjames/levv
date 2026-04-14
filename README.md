@@ -25,6 +25,7 @@ Runs as a terminal UI or in your browser with `-w`.
 * [Command Line](#command-line)
 * [Extending](#extending)
 * [Testing](#testing)
+* [Building and publishing](#building-and-publishing)
 * [References](#references)
 
 &nbsp;
@@ -518,6 +519,49 @@ pytest test/ -v --tb=short
 
 &nbsp;
 
+
+---------------------------------------------------------------------
+## Building and publishing
+
+**1. Install the build tools (once):**
+
+```bash
+pip3 install build twine
+```
+
+**2. Bump the version** in `levv/PROJECT.txt` — PyPI rejects uploads for a version that already exists.
+
+**3. Build the package:**
+
+```bash
+python3 -m build
+```
+
+This creates a `dist/` folder containing a `.tar.gz` (source distribution) and a `.whl` (wheel).
+
+**4. Upload to PyPI:**
+
+```bash
+twine upload dist/*
+```
+
+Twine will prompt for your PyPI username and password. The recommended approach is to use an API token: enter `__token__` as the username and your token as the password.
+
+**Optional — test the upload first** using [TestPyPI](https://test.pypi.org) before publishing publicly:
+
+```bash
+twine upload --repository testpypi dist/*
+```
+
+**Optional — save credentials** to avoid being prompted each time by creating `~/.pypirc`:
+
+```ini
+[pypi]
+username = __token__
+password = pypi-your-token-here
+```
+
+&nbsp;
 
 ---------------------------------------------------------------------
 ## References
