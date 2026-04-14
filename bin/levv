@@ -481,11 +481,25 @@ inbuf = ''
 def getLine(fh, sep = ''):
     global inbuf
 
+    # Return any separator-delimited record already sitting in the buffer
+    # before reading more data from the file.
+    if sep and len(sep):
+        pos = inbuf.find(sep)
+        if 0 <= pos:
+            s = inbuf[:pos]
+            inbuf = inbuf[pos + len(sep):]
+            return s
+
     # Make sure the file is ready to read
     while fh in select.select([fh], [], [], 0)[0]:
 
         # Try to read a line
         s = fh.readline()
+
+        # Empty read means EOF — select(2) always reports regular files as
+        # readable, so we must check this explicitly to avoid an infinite loop.
+        if not s:
+            break
 
         if not isinstance(s, str):
             s = s.decode()

@@ -20,6 +20,7 @@ with color-coded severity levels and live auto-scrolling.
 * [Input Formats](#input-formats)
 * [Regex Templates](#regex-templates)
 * [Command Line](#command-line)
+* [Testing](#testing)
 * [References](#references)
 
 &nbsp;
@@ -244,6 +245,45 @@ Advanced:
   -M, --maxfileread MAXFILEREAD     Maximum bytes to read from file; 0 = all (default: 10000)
   -k, --keyboard                    Force keyboard processing even when reading from stdin
   -D, --debug                       Show debug information
+```
+
+&nbsp;
+
+
+---------------------------------------------------------------------
+## Testing
+
+Install [pytest](https://pytest.org) if you don't have it already:
+
+```
+pip3 install pytest
+```
+
+Run the full test suite from the project root:
+
+```
+pytest test/
+```
+
+Run a specific test file:
+
+```
+pytest test/test_levv.py   # levv/main.py — filterLine, calcPriority, getLogTemplate
+pytest test/test_bin.py    # bin/levv    — parsing and utility functions
+```
+
+Run only tests whose name matches a keyword:
+
+```
+pytest test/ -k "www"
+pytest test/ -k "filterLine or processLine"
+```
+
+Add `-v` for verbose output (one line per test) or `--tb=short` for shorter
+failure tracebacks:
+
+```
+pytest test/ -v --tb=short
 ```
 
 &nbsp;
