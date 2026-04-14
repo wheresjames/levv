@@ -45,8 +45,10 @@ Runs as a terminal UI or in your browser with `-w`.
 - **Auto-detection** — samples the first lines of a file and selects the best
   matching format automatically; the active format is shown in the top-right corner
 - **Many built-in formats** — syslog, journald, Docker, JSON Lines, logfmt,
-  nginx error logs, Python logging, Log4j/Logback, kernel messages, Apache/nginx
-  access logs, PM2, and plain text
+  nginx error logs, Apache error logs, Python logging, Log4j/Logback, kernel
+  messages, Apache/nginx access logs, HAProxy, Traefik, PostgreSQL, MySQL,
+  GELF, CEF, W3C Extended (IIS), Android logcat, Kubernetes, CSV/TSV, PM2,
+  and plain text
 - **Multiple files** — monitor several log files simultaneously on one timeline;
   messages are labelled by source and individual files can be isolated with a keypress
 - **Web interface** — add `-w` to open a browser-based viewer with the same
@@ -171,6 +173,126 @@ levv -i /var/log/myapp/app.log -I python
 
 ```
 levv -i /var/log/myapp/app.log -I log4j
+```
+
+**Apache httpd error log**
+
+```
+levv -i /var/log/apache2/error.log -I apache-error
+```
+
+**HAProxy**
+
+```
+levv -i /var/log/haproxy.log -I haproxy
+```
+
+**Traefik**
+
+```
+# JSON mode (recommended in modern Traefik configs)
+levv -i /var/log/traefik/access.log -I traefik
+
+# Pipe live from a running container
+docker logs -f traefik | levv -i - -I traefik
+```
+
+**PostgreSQL**
+
+```
+levv -i /var/log/postgresql/postgresql-*.log -I postgresql
+
+# Live tail via psql
+tail -f /var/log/postgresql/postgresql-*.log | levv -i - -I postgresql
+```
+
+**MySQL**
+
+```
+levv -i /var/log/mysql/error.log -I mysql
+```
+
+**W3C Extended Log Format (IIS / Azure / CDN)**
+
+```
+levv -i /var/log/iis/u_ex*.log -I w3c
+```
+
+**GELF (Graylog)**
+
+```
+# Pipe from a Graylog-compatible log shipper
+my-app --log-format=gelf | levv -i - -I gelf
+```
+
+**CEF (ArcSight / Splunk security logs)**
+
+```
+levv -i /var/log/security/events.cef -I cef
+tail -f /var/log/security/events.cef | levv -i -
+```
+
+**CSV / TSV logs**
+
+```
+# With a header row — columns are auto-mapped by name
+levv -i app.csv -I csv
+
+# Tab-separated
+levv -i events.tsv -I csv
+```
+
+**Docker — single container**
+
+```
+docker logs -f <container> | levv -i -
+
+# Force the docker format if auto-detection picks the wrong parser
+docker logs -f <container> | levv -i - -I docker
+```
+
+**Docker — multiple containers**
+
+```
+{ docker logs -f container1 & docker logs -f container2; } | levv -i -
+```
+
+**Docker Compose — all services**
+
+```
+docker compose logs -f | levv -i -
+```
+
+**Kubernetes**
+
+```
+# Single pod (requires --timestamps for time extraction)
+kubectl logs -f <pod> --timestamps | levv -i - -I k8s
+
+# All pods matching a label
+kubectl logs -f -l app=myapp --timestamps | levv -i - -I k8s
+
+# Previous (crashed) container
+kubectl logs <pod> --previous --timestamps | levv -i - -I k8s
+```
+
+**Android logcat via ADB**
+
+```
+# Default — auto-detects logcat format
+adb logcat | levv -i - -I logcat
+
+# Threadtime format (recommended — includes PID/TID)
+adb logcat -v threadtime | levv -i - -I logcat
+
+# Clear buffer first so you only see new messages
+adb logcat -c && adb logcat -v threadtime | levv -i - -I logcat
+
+# Filter to a specific tag (warnings and above, silence everything else)
+adb logcat MyApp:W *:S | levv -i - -I logcat
+
+# Specific device when multiple are connected
+adb -s <device-serial> logcat -v threadtime | levv -i - -I logcat
 ```
 
 **Pipe from stdin**
@@ -317,8 +439,19 @@ Run `levv --listformats` to see the full list with descriptions.
 | `json` | JSON Lines / NDJSON (zerolog, zap, structlog, pino, GCP, …) |
 | `logfmt` | `key=value` pairs (Prometheus, Loki, Go services) |
 | `nginx-error` | nginx error log (`YYYY/MM/DD HH:MM:SS [level] …`) |
+| `apache-error` | Apache httpd error log (pre-2.4 and 2.4+ formats) |
 | `python` | Python `logging` module (`basicConfig` and common formatters) |
 | `log4j` | Log4j / Logback / Log4net (Java logging frameworks) |
+| `postgresql` | PostgreSQL server log (`log_line_prefix` variants) |
+| `mysql` | MySQL error log (5.x and 8.x formats) |
+| `haproxy` | HAProxy access log (HTTP and TCP modes) |
+| `traefik` | Traefik reverse proxy access logs (JSON and CLF-text modes) |
+| `w3c` | W3C Extended Log Format (IIS, Azure, CDN access logs) |
+| `gelf` | GELF (Graylog Extended Log Format) structured JSON logs |
+| `cef` | CEF (Common Event Format) — ArcSight/Splunk security event logs |
+| `logcat` | Android logcat (threadtime and brief formats) |
+| `k8s` | Kubernetes `kubectl logs --timestamps` output |
+| `csv` | CSV/TSV logs with auto-detected time, severity, and message columns |
 | `pm2` | PM2 process manager log format |
 | `time:` | Simple `<timestamp>: <message>` format |
 
@@ -432,7 +565,7 @@ Display:
 Advanced:
   -m, --maxmsgbuf MAXMSGBUF         Maximum events to keep in memory (default: 5000)
   -M, --maxfileread MAXFILEREAD     Maximum bytes to read from file; 0 = all (default: 10000)
-  -k, --keyboard                    Force keyboard processing even when reading from stdin
+  -k, --keyboard                    Kept for compatibility; keyboard input is always enabled
   -D, --debug                       Show debug information
 ```
 
