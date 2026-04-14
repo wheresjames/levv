@@ -32,7 +32,7 @@ Runs as a terminal UI or in your browser with `-w`.
 
 
 ---------------------------------------------------------------------
-## Features
+<h2 id="features">Features</h2>
 
 - **Timeline view** — events are plotted along a horizontal time axis, so you can
   see bursts, gaps, and patterns at a glance
@@ -63,7 +63,7 @@ Runs as a terminal UI or in your browser with `-w`.
 
 
 ---------------------------------------------------------------------
-## Install
+<h2 id="install">Install</h2>
 
 ```
 pip3 install levv
@@ -73,7 +73,7 @@ pip3 install levv
 
 
 ---------------------------------------------------------------------
-## Quick Start
+<h2 id="quick-start">Quick Start</h2>
 
 With no arguments, levv opens `/var/log/syslog` (if it exists):
 
@@ -111,7 +111,7 @@ levv --listformats
 
 
 ---------------------------------------------------------------------
-## Examples
+<h2 id="examples">Examples</h2>
 
 **Kernel messages**
 
@@ -350,7 +350,7 @@ levv /dev/kmsg -w 9000
 
 
 ---------------------------------------------------------------------
-## Keyboard
+<h2 id="keyboard">Keyboard</h2>
 
 | Key | Action |
 |-----|--------|
@@ -371,7 +371,7 @@ levv /dev/kmsg -w 9000
 
 
 ---------------------------------------------------------------------
-## Web Interface
+<h2 id="web-interface">Web Interface</h2>
 
 ![Web UI](https://raw.githubusercontent.com/wheresjames/levv/main/imgs/webview-kmsg.png)
 
@@ -409,7 +409,7 @@ coding, same zoom/scroll controls.
 
 
 ---------------------------------------------------------------------
-## Input Formats
+<h2 id="input-formats">Input Formats</h2>
 
 Pass a format name with `-I` / `--inputformat`, or let levv detect it automatically.
 The active format is always shown in the top-right corner of the screen as `[fmt:name]`.
@@ -459,7 +459,7 @@ Run `levv --listformats` to see the full list with descriptions.
 
 
 ---------------------------------------------------------------------
-## Auto-Detection
+<h2 id="auto-detection">Auto-Detection</h2>
 
 When `-I` is not specified (or is set to `auto`), levv samples the first 20 lines
 of the file and scores each format using a probe function before reading any events.
@@ -480,7 +480,7 @@ corner of the screen so you know what levv is using.
 
 
 ---------------------------------------------------------------------
-## Regex Templates
+<h2 id="regex-templates">Regex Templates</h2>
 
 For log formats not covered by the built-in parsers, supply a named-capture regex
 with `-T` / `--inputtemplate`.  levv looks for three named groups:
@@ -519,7 +519,7 @@ Built-in templates can also be referenced by name with `-I`:
 
 
 ---------------------------------------------------------------------
-## Command Line
+<h2 id="command-line">Command Line</h2>
 
 ```
 usage: levv [-h] [-i INPUTFILE] [-I INPUTFORMAT] [-s SEPARATOR]
@@ -573,7 +573,7 @@ Advanced:
 
 
 ---------------------------------------------------------------------
-## Extending
+<h2 id="extending">Extending</h2>
 
 Each input format lives in its own module under `levv/formats/`.  Adding a new
 format requires only two steps:
@@ -615,7 +615,7 @@ Shared utilities (`findDate`, `calcPriority`, `parse_time_str`) are available in
 
 
 ---------------------------------------------------------------------
-## Testing
+<h2 id="testing">Testing</h2>
 
 Install [pytest](https://pytest.org) if you don't have it already:
 
@@ -654,7 +654,7 @@ pytest test/ -v --tb=short
 
 
 ---------------------------------------------------------------------
-## Building and publishing
+<h2 id="building-and-publishing">Building and publishing</h2>
 
 **1. Install the build tools (once):**
 
@@ -697,7 +697,7 @@ password = pypi-your-token-here
 &nbsp;
 
 ---------------------------------------------------------------------
-## References
+<h2 id="references">References</h2>
 
 - [levv on GitHub](https://github.com/wheresjames/levv)
 - [levv on PyPI](https://pypi.org/project/levv/)
