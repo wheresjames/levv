@@ -1,10 +1,12 @@
 
 # levv - Log File Event Viewer
 
-A terminal-based graphical log viewer that plots events on an interactive timeline,
+A graphical log viewer that plots events on an interactive timeline,
 with color-coded severity levels and live auto-scrolling.
+Runs as a terminal UI or in your browser with `-w`.
 
 ![Screen Shot](https://raw.githubusercontent.com/wheresjames/levv/main/imgs/view-syslog.png)
+![Web UI](https://raw.githubusercontent.com/wheresjames/levv/main/imgs/webview-kmsg.png)
 
 &nbsp;
 
@@ -17,6 +19,7 @@ with color-coded severity levels and live auto-scrolling.
 * [Quick Start](#quick-start)
 * [Examples](#examples)
 * [Keyboard](#keyboard)
+* [Web Interface](#web-interface)
 * [Input Formats](#input-formats)
 * [Auto-Detection](#auto-detection)
 * [Regex Templates](#regex-templates)
@@ -46,6 +49,8 @@ with color-coded severity levels and live auto-scrolling.
   access logs, PM2, and plain text
 - **Multiple files** — monitor several log files simultaneously on one timeline;
   messages are labelled by source and individual files can be isolated with a keypress
+- **Web interface** — add `-w` to open a browser-based viewer with the same
+  functionality and a dark theme; no extra dependencies required
 - **Automatic permission elevation** — prompts to re-run under `sudo` when a file
   cannot be read due to permissions
 - **Custom regex templates** — describe any log format with a named-capture regex
@@ -212,6 +217,13 @@ levv -i app.log,access.log -I json,www
 levv -i app.log -o normalised.log
 ```
 
+**Open in a browser instead of the terminal**
+
+```
+levv /var/log/syslog -w
+levv /dev/kmsg -w 9000
+```
+
 &nbsp;
 
 
@@ -232,6 +244,44 @@ levv -i app.log -o normalised.log
 | `0` | **Multiple files:** show all files (clear file filter) |
 | `l` | Cycle lines per event: 1 → 2 → 3 → 1 |
 | `q` / `Esc` | Quit |
+
+&nbsp;
+
+
+---------------------------------------------------------------------
+## Web Interface
+
+![Web UI](https://raw.githubusercontent.com/wheresjames/levv/main/imgs/webview-kmsg.png)
+
+&nbsp;
+
+Add `-w` (or `--web`) to any command to start an HTTP server and open a
+browser-based viewer instead of the terminal UI.  Press **Ctrl+C** in the
+terminal to stop the server.
+
+```
+levv /var/log/syslog -w            # default port 8000
+levv /dev/kmsg -w 9000             # custom port
+levv app.log access.log -w         # multiple files
+```
+
+The browser interface mirrors the terminal UI: same timeline, same color
+coding, same zoom/scroll controls.
+
+| Control | Action |
+|---------|--------|
+| `◀` / `▶` buttons | Scroll backward / forward in time |
+| `+` / `−` buttons | Zoom in / out |
+| `⟳ Auto` button | Toggle auto-scroll to current time |
+| Lines `1` / `2` / `3` buttons | Lines per event |
+| File buttons | Filter by source file (multi-file only) |
+| Mouse wheel | Zoom in / out |
+| Click & drag | Scroll timeline |
+| Scrollbar (right edge) | Scroll event rows up / down |
+| `PgUp` / `PgDn` | Scroll event rows up / down |
+| `s` | Resume auto-scroll |
+| `l` | Cycle lines per event |
+| `h` | Toggle help overlay |
 
 &nbsp;
 
@@ -344,6 +394,7 @@ usage: levv [-h] [-i INPUTFILE] [-I INPUTFORMAT] [-s SEPARATOR]
             [-o OUTPUTFILE] [-O OUTPUTFORMAT]
             [-r TIMERANGE] [-t TIME] [-R REFRESH]
             [-a AUTOSCROLL] [-l LINES]
+            [-w [PORT]]
             [-m MAXMSGBUF] [-M MAXFILEREAD]
             [-k] [-D] [--listformats]
             [FILE ...]
@@ -375,6 +426,8 @@ Display:
   -R, --refresh REFRESH             File refresh interval in seconds; 0 = no refresh (default: 3)
   -a, --autoscroll AUTOSCROLL       Auto-scroll anchor: 1–100 % of screen width; 0 = disabled (default: 75)
   -l, --lines LINES                 Lines per event: 1, 2, or 3 (default: 2)
+  -w, --web [PORT]                  Open browser-based viewer instead of terminal UI;
+                                    optional PORT (default: 8000); press Ctrl+C to stop
 
 Advanced:
   -m, --maxmsgbuf MAXMSGBUF         Maximum events to keep in memory (default: 5000)
