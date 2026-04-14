@@ -11,6 +11,8 @@ import curses
 import select
 import unicodedata
 import argparse
+import threading
+import webbrowser
 
 from datetime import datetime
 
@@ -21,6 +23,7 @@ except Exception as e:
     Log = print
 
 import levv
+import levv.web
 
 #-------------------------------------------------------------------
 # Globals
@@ -581,6 +584,176 @@ def initCurses():
 
 
 #-------------------------------------------------------------------
+# Web mode
+
+def run_web_mode(p):
+    """Run levv as an HTTP server instead of a curses UI."""
+
+    port = p['web']
+    files = p['files']
+    usestdin = any(fi['stdin'] for fi in files)
+    multi = len(files) > 1
+
+    # Pre-open stdin
+    for fi in files:
+        if fi['stdin']:
+            fi['fh'] = sys.stdin
+
+    # Output file handle
+    fo = None
+    if p.get('outputfile'):
+        fo = open(p['outputfile'], 'a')
+
+    # Shared state for the web server
+    lock = threading.Lock()
+    msgs = []
+    msgs_time = 0
+
+    # Serialisable file info for the API
+    files_info = [
+        {'idx': fi['idx'], 'path': fi['path'], 'stdin': fi['stdin'], 'fmt': fi['fmt']}
+        for fi in files
+    ]
+
+    p['autoscroll_active'] = True
+    p['view_time'] = time.time() - p['timerange'] * (p['autoscroll'] / 100)
+
+    shared = {
+        'p':          p,
+        'msgs':       msgs,
+        'lock':       lock,
+        'files_info': files_info,
+    }
+
+    # Start the web server
+    server = levv.web.start(port, shared)
+    url = f'http://localhost:{port}/'
+    print(f'levv web interface running at {url}')
+    print('Press Ctrl+C to stop.')
+
+    # Open browser after a short delay so the server is ready
+    def _open():
+        time.sleep(0.4)
+        webbrowser.open(url)
+    threading.Thread(target=_open, daemon=True).start()
+
+    # Turn off refresh when all input is stdin
+    if usestdin and not any(not fi['stdin'] for fi in files):
+        p['refresh'] = 0
+
+    try:
+        while True:
+            now = time.time()
+
+            need_refresh = (
+                usestdin
+                or 0 >= len(msgs)
+                or 0 > p['refresh']
+                or (p['refresh'] and now > msgs_time)
+            )
+
+            if need_refresh:
+                new_msgs = []
+
+                for fi in files:
+                    # Open file on first access
+                    if not fi['fh'] and not fi['stdin']:
+                        fi['fh'] = open(fi['path'], 'rb')
+                        if 0 != p['maxfileread']:
+                            setFilePtr(fi['fh'], -p['maxfileread'])
+                            getLine(fi['fh'], p['separator'])
+
+                        if fi['fmt'] == 'auto' and not fi['template']:
+                            try:
+                                _spos = fi['fh'].tell()
+                                _seek = True
+                            except OSError:
+                                _spos = None
+                                _seek = False
+                            _sample = []
+                            for _ in range(20):
+                                _l = getLine(fi['fh'], p['separator'])
+                                if _l:
+                                    _sample.append(_l)
+                            _det = levv.detect_format(_sample, fi['path'])
+                            if _det != 'auto':
+                                fi['fmt'] = _det
+                                # Update files_info too
+                                for info in files_info:
+                                    if info['idx'] == fi['idx']:
+                                        info['fmt'] = fi['fmt']
+                            if _seek:
+                                try:
+                                    fi['fh'].seek(_spos)
+                                except OSError:
+                                    pass
+
+                    fh = fi['fh']
+                    if not fh:
+                        continue
+
+                    while True:
+                        s = getLine(fh, p['separator'])
+                        if not s:
+                            break
+
+                        if p['filter'] and not re.search(p['filter'], s):
+                            continue
+                        if p['exclude'] and re.search(p['exclude'], s):
+                            continue
+
+                        if fi['template']:
+                            r, s = levv.filterLine(fi['template'], s)
+                            if not s:
+                                continue
+                            if not r:
+                                r = levv.parse_line(fi['fmt'], s)
+                        else:
+                            r = levv.parse_line(fi['fmt'], s)
+
+                        if not r:
+                            continue
+
+                        r['file_idx'] = fi['idx']
+                        if multi and 'msg' in r:
+                            r['msg'] = f"[{fi['idx']}] {r['msg']}"
+
+                        new_msgs.append(r)
+
+                        if fo and 'msg' in r and 'time' in r:
+                            fo.write(f"{r['time']} {r.get('sev', 6)} {r['msg']}\n")
+
+                with lock:
+                    msgs.extend(new_msgs)
+                    if len(msgs) > p['maxmsgbuf']:
+                        del msgs[:len(msgs) - p['maxmsgbuf']]
+                    shared['msgs'] = msgs
+
+                if not p['refresh']:
+                    for fi in files:
+                        if fi['fh'] and not fi['stdin']:
+                            fi['fh'].close()
+                            fi['fh'] = None
+
+                msgs_time = now + p['refresh']
+
+            # Update server-side view_time when autoscrolling
+            with lock:
+                if p.get('autoscroll_active', True):
+                    pct = p.get('autoscroll', 75)
+                    p['view_time'] = now - (p['timerange'] * pct / 100)
+
+            time.sleep(0.25)
+
+    except KeyboardInterrupt:
+        print()
+
+    if fo:
+        fo.close()
+    server.shutdown()
+
+
+#-------------------------------------------------------------------
 # Main
 
 def main():
@@ -628,8 +801,37 @@ def main():
     ap.add_argument('--listformats', action='store_true',
                     help='List supported input formats and exit')
 
+    # Pre-scan sys.argv for -w/--web before argparse sees it.
+    # nargs='?' would greedily consume the filename as the port value when the
+    # flag appears before the file (e.g. levv -w /dev/kmsg), so we extract it
+    # manually: the value is only treated as a port when it is a plain integer.
+    _web_port = None
+    _argv = []
+    _i = 0
+    _raw = sys.argv[1:]
+    while _i < len(_raw):
+        _a = _raw[_i]
+        if _a in ('-w', '--web'):
+            _next = _raw[_i + 1] if _i + 1 < len(_raw) else ''
+            if _next.isdigit():
+                _web_port = int(_next)
+                _i += 2
+            else:
+                _web_port = 8000
+                _i += 1
+        elif _a.startswith('--web='):
+            _web_port = int(_a.split('=', 1)[1])
+            _i += 1
+        elif len(_a) > 2 and _a[:2] == '-w' and _a[2:].isdigit():
+            _web_port = int(_a[2:])
+            _i += 1
+        else:
+            _argv.append(_a)
+            _i += 1
+
     # Get arguments
-    p = vars(ap.parse_args())
+    p = vars(ap.parse_args(_argv))
+    p['web'] = _web_port
 
     # Positional FILE(s) override -i only when -i was not given explicitly
     if p['inputfile_pos'] and not p['inputfile']:
@@ -724,6 +926,13 @@ def main():
                         re.compile(part)
                     except re.error as e:
                         ap.error("%s: invalid regular expression: %s" % (flag, e))
+
+    #---------------------------------------------------------------
+    # Web mode
+
+    if p['web'] is not None:
+        run_web_mode(p)
+        return
 
     #---------------------------------------------------------------
     # Initialize
