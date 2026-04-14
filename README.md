@@ -44,6 +44,8 @@ with color-coded severity levels and live auto-scrolling.
 - **Many built-in formats** — syslog, journald, Docker, JSON Lines, logfmt,
   nginx error logs, Python logging, Log4j/Logback, kernel messages, Apache/nginx
   access logs, PM2, and plain text
+- **Multiple files** — monitor several log files simultaneously on one timeline;
+  messages are labelled by source and individual files can be isolated with a keypress
 - **Automatic permission elevation** — prompts to re-run under `sudo` when a file
   cannot be read due to permissions
 - **Custom regex templates** — describe any log format with a named-capture regex
@@ -75,7 +77,15 @@ levv
 Point it at any log file:
 
 ```
+levv /path/to/app.log
 levv -i /path/to/app.log
+```
+
+Monitor multiple files at once:
+
+```
+levv /var/log/syslog /var/log/auth.log
+levv -i /var/log/syslog,/var/log/auth.log
 ```
 
 Pipe data directly into levv:
@@ -183,6 +193,19 @@ levv -i /var/log/nginx/access.log -I www -x 'GET /health'
 levv -i app.log -T '(?P<time>[^ ]+) (?P<sev>\w+) (?P<msg>.*)'
 ```
 
+**Monitor multiple files together**
+
+```
+levv /var/log/syslog /var/log/auth.log /var/log/kern.log
+levv -i /var/log/syslog,/var/log/auth.log
+```
+
+**Multiple files with per-file formats**
+
+```
+levv -i app.log,access.log -I json,www
+```
+
 **Write a normalised copy of the log to a file**
 
 ```
@@ -204,7 +227,9 @@ levv -i app.log -o normalised.log
 | `PgUp` | Scroll event rows up |
 | `PgDn` | Scroll event rows down |
 | `s` | Resume auto-scroll (tracks current time) |
-| `1`–`9` | Set auto-scroll anchor point (10 %–90 % of screen width) |
+| `1`–`9` | **Single file:** set auto-scroll anchor (10 %–90 % of screen width) |
+| `1`–`9` | **Multiple files:** show only messages from that file; press again to show all |
+| `0` | **Multiple files:** show all files (clear file filter) |
 | `l` | Cycle lines per event: 1 → 2 → 3 → 1 |
 | `q` / `Esc` | Quit |
 
@@ -216,6 +241,16 @@ levv -i app.log -o normalised.log
 
 Pass a format name with `-I` / `--inputformat`, or let levv detect it automatically.
 The active format is always shown in the top-right corner of the screen as `[fmt:name]`.
+When monitoring multiple files with different formats, the label shows `[fmt:multi]`
+unless a single file is selected with a digit key, in which case it shows that file's format.
+
+When using multiple files, `-I` and `-T` accept comma-separated values — one per file
+in the same order as `-i`, or a single value applied to all files:
+
+```
+levv -i app.log,access.log -I json,www
+levv -i app.log,access.log -I auto        # auto-detect each file independently
+```
 
 Run `levv --listformats` to see the full list with descriptions.
 
@@ -311,6 +346,7 @@ usage: levv [-h] [-i INPUTFILE] [-I INPUTFORMAT] [-s SEPARATOR]
             [-a AUTOSCROLL] [-l LINES]
             [-m MAXMSGBUF] [-M MAXFILEREAD]
             [-k] [-D] [--listformats]
+            [FILE ...]
 
 Event monitor.
 
@@ -319,10 +355,13 @@ options:
   --listformats                     list all supported input formats and exit
 
 Input:
-  -i, --inputfile INPUTFILE         Log file to read; use - for stdin (default: /var/log/syslog)
-  -I, --inputformat INPUTFORMAT     Input format name (default: auto); see --listformats
+  FILE                              One or more log files (space-separated positional arguments)
+  -i, --inputfile INPUTFILE         Log file(s), comma-separated; use - for stdin
+                                    (default: /var/log/syslog)
+  -I, --inputformat INPUTFORMAT     Format(s), comma-separated — one per file or one for all
+                                    (default: auto); see --listformats
   -s, --separator SEPARATOR         Record separator; default is CR/LF
-  -T, --inputtemplate INPUTTEMPLATE Regex template with named groups: time, sev, msg
+  -T, --inputtemplate INPUTTEMPLATE Regex template(s), comma-separated — one per file or one for all
   -f, --filter FILTER               Show only lines matching this regex
   -x, --exclude EXCLUDE             Hide lines matching this regex
 
@@ -408,7 +447,7 @@ Run a specific test file:
 
 ```
 pytest test/test_levv.py    # levv/main.py  — filterLine, calcPriority, getLogTemplate
-pytest test/test_bin.py     # bin/levv      — utility functions and processLine dispatch
+pytest test/test_bin.py     # bin/levv      — utility functions and parse_line dispatch
 pytest test/test_formats.py # levv/formats/ — all format parsers and auto-detection
 ```
 
