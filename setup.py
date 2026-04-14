@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 
 import os
-from setuptools import setup
+from setuptools import setup, find_packages
 
 def readConfig(fname):
     cfg = {}
@@ -33,7 +33,7 @@ setup(
     author=cfg['author'],
     author_email=cfg['email'],
     license=cfg['license'],
-    packages=[cfg['name']],
+    packages=find_packages(),
     scripts=['bin/%s'%cfg['name']],
     include_package_data = True,
     long_description=long_description,
