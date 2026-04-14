@@ -787,8 +787,14 @@ def main():
 
                         # Auto-detect format from a sample of lines when the
                         # user hasn't specified one and no template is active.
+                        # Skip on non-seekable files (character devices, pipes).
                         if p['inputformat'] == 'auto' and not p['inputtemplate']:
-                            _sample_pos = fh.tell()
+                            try:
+                                _sample_pos = fh.tell()
+                                _seekable = True
+                            except OSError:
+                                _sample_pos = None
+                                _seekable = False
                             _sample = []
                             for _ in range(20):
                                 _l = getLine(fh, p['separator'])
@@ -797,11 +803,15 @@ def main():
                             _detected = levv.detect_format(_sample, p['inputfile'])
                             if _detected != 'auto':
                                 p['inputformat'] = _detected
-                            # Rewind so detected lines are processed normally
-                            try:
-                                fh.seek(_sample_pos)
-                            except Exception:
-                                pass
+                            # Rewind so detected lines are processed normally.
+                            # Non-seekable sources (devices, pipes) keep the
+                            # sampled lines in _sample and they are lost, but
+                            # that is acceptable — we still set the format.
+                            if _seekable:
+                                try:
+                                    fh.seek(_sample_pos)
+                                except OSError:
+                                    pass
 
                 # Read data from input stream
                 while True:
