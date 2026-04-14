@@ -404,6 +404,72 @@ def makeDisplayPath(path, max, sep='/', rm='...'):
     return path
 
 
+def drawHelp(ti):
+    """Draw a help legend overlay in the centre of the screen."""
+
+    lines = [
+        ("Keys", ""),
+        ("h",            "Toggle this help"),
+        ("q / Esc",      "Quit"),
+        ("Up / Down",    "Zoom in / out"),
+        ("Left / Right", "Scroll timeline"),
+        ("PgUp / PgDn",  "Scroll rows up / down"),
+        ("s",            "Resume auto-scroll"),
+        ("l",            "Cycle lines per item (1/2/3)"),
+        ("1-9",          "Filter to file N  (multi-file)"),
+        ("0",            "Show all files    (multi-file)"),
+        ("1-9",          "Set scroll %      (single file)"),
+    ]
+
+    key_w   = max(len(k) for k, _ in lines)
+    desc_w  = max(len(d) for _, d in lines)
+    box_w   = key_w + desc_w + 7   # 2 border + 2 pad each side + 1 sep
+    box_h   = len(lines) + 2       # 2 border rows
+
+    scr_h = ti['h']
+    scr_w = ti['w']
+    y0 = max(0, (scr_h - box_h) // 2)
+    x0 = max(0, (scr_w - box_w) // 2)
+
+    col_box  = curses.color_pair(2)
+    col_key  = curses.color_pair(1)
+    col_desc = curses.color_pair(0)
+    col_hdr  = curses.color_pair(2)
+
+    # Top border
+    try:
+        stdscr.addstr(y0, x0, "+" + "-" * (box_w - 2) + "+", col_box)
+    except curses.error:
+        pass
+
+    for i, (key, desc) in enumerate(lines):
+        row = y0 + 1 + i
+        try:
+            stdscr.addstr(row, x0, "|", col_box)
+            if not key and not desc:
+                # section header
+                pass
+            elif not desc:
+                # header label centred
+                label = key.center(box_w - 2)
+                stdscr.addstr(row, x0 + 1, label, col_hdr)
+            else:
+                pad_key  = key.ljust(key_w)
+                pad_desc = desc.ljust(desc_w)
+                stdscr.addstr(row, x0 + 2, pad_key,  col_key)
+                stdscr.addstr(row, x0 + 2 + key_w, "  ", col_box)
+                stdscr.addstr(row, x0 + 2 + key_w + 2, pad_desc, col_desc)
+            stdscr.addstr(row, x0 + box_w - 1, "|", col_box)
+        except curses.error:
+            pass
+
+    # Bottom border
+    try:
+        stdscr.addstr(y0 + box_h - 1, x0, "+" + "-" * (box_w - 2) + "+", col_box)
+    except curses.error:
+        pass
+
+
 def drawScreen(p, ti, msgs=[]):
     global stdscr
 
@@ -682,6 +748,7 @@ def main():
     # Page offset
     p['page'] = 0
     p['max_page'] = 0
+    p['show_help'] = False
 
     #---------------------------------------------------------------
     # Catch exceptions so we can restore the screen
@@ -794,6 +861,10 @@ def main():
                             pass  # 0 not bound in single-file mode
                         else:
                             scroll = n * 10
+
+                # Help legend toggle
+                elif 'h' == chr(key).lower():
+                    p['show_help'] = not p['show_help']
 
                 # Quit on Escape or 'q'
                 elif 27 == key or 'q' == chr(key).lower():
@@ -929,6 +1000,13 @@ def main():
                 drawScreen(p, ti, msgs)
             except curses.error:
                 pass
+
+            # Help overlay
+            if p['show_help']:
+                try:
+                    drawHelp(ti)
+                except curses.error:
+                    pass
 
             # Debug info
             if p['debug']:
